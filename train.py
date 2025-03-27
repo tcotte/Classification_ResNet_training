@@ -1,15 +1,14 @@
 import logging
 import os
 import typing
-from uuid import UUID
 
 import albumentations as A
 import torch
 import torchvision
 from albumentations import ToTensorV2
 from picsellia import Client
+from picsellia.types.enums import InferenceType
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 from datasets import BinaryDataset
 from logger import PicselliaLogger
@@ -18,7 +17,8 @@ from utils import download_datasets
 logging.basicConfig(format="%(message)s", level=logging.INFO)
 logging.getLogger().setLevel(logging.INFO)
 
-def fill_picsellia_evaluation_tab(model: torch.nn.Module, data_loader: DataLoader, test_dataset) -> None:
+
+def fill_picsellia_evaluation_tab(model: torch.nn.Module, validation_loader: DataLoader, test_dataset) -> None:
     """
     Fill Picsellia evaluation which allows comparing on a dedicated bench of images the prediction done by the freshly
     trained model with the ground-truth.
@@ -26,25 +26,34 @@ def fill_picsellia_evaluation_tab(model: torch.nn.Module, data_loader: DataLoade
     :param data_loader: Dataloader which gathers the bench of images on which the evaluation will be done
     :param test_dataset_id: ID of the dataset version which comports the pictures on which the evaluation will be done
     """
+    label_map = ['raw', 'marked']
+
     model.eval()
 
     with torch.no_grad():
-        for inputs, labels, filename in validation_loader:
+        for inputs, labels, filenames in validation_loader:
             inputs = inputs.to(device)
             outputs = model(inputs)
+
+            output_logits = torch.nn.Softmax(dim=1)(outputs)
+
+            confidences = torch.max(output_logits, dim=1).values.cpu().numpy().tolist()
+            predictions = torch.argmax(outputs, dim=1).cpu().numpy().tolist()
+
             print(outputs)
 
             # outputs = model.generate(batch["pixel_values"].to(device))
         # generated_text = processor.batch_decode(outputs, skip_special_tokens=True)
 
-    #     for filename, text in zip(batch['filename'], generated_text):
-    #         asset = test_dataset.find_asset(filename=filename)
+        for filename, pred, conf in zip(filenames.numpy().tolist(), predictions, confidences):
+            asset = test_dataset.find_asset(filename=filename)
+            #
+            label = test_dataset.get_or_create_label(name=label_map[pred])
+            experiment.add_evaluation(asset, classifications=[(label, round(conf, 3))])
     #
-    #         label = test_dataset.get_or_create_label(name=text)
-    #         experiment.add_evaluation(asset, classifications=[(label, 1.0)])
-    #
-    # job = experiment.compute_evaluations_metrics(InferenceType.CLASSIFICATION)
-    # job.wait_for_done()
+    job = experiment.compute_evaluations_metrics(InferenceType.CLASSIFICATION)
+    job.wait_for_done()
+
 
 if __name__ == '__main__':
     image_size: typing.Final[tuple[int, int]] = (512, 512)
@@ -89,7 +98,6 @@ if __name__ == '__main__':
 
     base_model = experiment.get_base_model_version()
 
-
     train_transform = A.Compose(
         [
             A.Resize(image_size[0], image_size[1]),
@@ -110,7 +118,6 @@ if __name__ == '__main__':
             ToTensorV2(),
         ]
     )
-
 
     """dataset = CT_Dataset(csv_path='data.csv', image_folder='data', transform=train_transform)
     batch_size = 16
@@ -150,9 +157,15 @@ if __name__ == '__main__':
     if hasattr(torchvision.models, f'resnet{nb_layers}'):
         model = getattr(torchvision.models, f'resnet{nb_layers}')(pretrained=pretrained_model)
 
+
+
     else:
         logging.error(f'The model ResNet with {nb_layers} was not found. The training process will close.')
         raise f'The model ResNet with {nb_layers} was not found. The training process will close.'
+
+    # Modify the last layer of the model
+    num_classes = 2
+    model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
 
     # Set the model to run on the device
     model.to(device)
@@ -185,7 +198,6 @@ if __name__ == '__main__':
             loss.backward()
             optimizer.step()
 
-
         # logging.info(train_loss / len(train_loader))
 
         model.eval()
@@ -193,7 +205,7 @@ if __name__ == '__main__':
         total_instances = 0
 
         with torch.no_grad():
-             for inputs, labels, _ in validation_loader:
+            for inputs, labels, _ in validation_loader:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 outputs = model(inputs)
@@ -216,5 +228,5 @@ if __name__ == '__main__':
     logger.store_model(model_path=last_model_path, model_name="last_weights")
     logging.info("Model weights were successfully saved.")
 
-    fill_picsellia_evaluation_tab(model=model, data_loader=validation_loader,
-                                  test_dataset_id=experiment.get_dataset('val'))
+    fill_picsellia_evaluation_tab(model=model, validation_loader=validation_loader,
+                                  test_dataset=experiment.get_dataset('val'))

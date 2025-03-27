@@ -22,6 +22,14 @@ class PicselliaLogger:
         self._client: Client = client
         self._experiment: Experiment = experiment
 
+    def get_label_map(self, list_dataset_versions: list[DatasetVersion]) -> list:
+        label_map: list = []
+        for dataset_version in list_dataset_versions:
+            label_map.extend([label.name for label in dataset_version.list_labels()])
+
+        # remove dupli
+        return list(set(label_map))
+
     def get_picsellia_experiment_link(self) -> str:
         """
         Get Picsellia experiment link
