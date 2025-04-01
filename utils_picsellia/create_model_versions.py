@@ -22,7 +22,7 @@ if __name__ == '__main__':
         'lr_scheduler_gamma': 0.9
     }
 
-    for nb_layers in [18, 50]:
+    for nb_layers in [18, 34, 50, 101, 152]:
         base_parameters['nb_layers'] = nb_layers
         try:
             model.create_version(base_parameters=base_parameters,

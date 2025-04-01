@@ -93,27 +93,32 @@ def get_filename_and_label(asset: Asset) -> tuple[str, str]:
     return asset.filename, annotation.list_classifications()[0].label.name
 
 
-def create_label_file(datasets: list[DatasetVersion], labelmap: dict, csv_filename: str = 'labels.csv') -> None:
-    # get inverse of labelmap -> change key-value by value-key
-    value_key_labelmap = dict((v, k) for k, v in labelmap.items())
+def create_label_file(datasets: list[DatasetVersion], labelmap: dict, dataset_root_folder: str,
+                      csv_filename: str = 'labels.csv') -> None:
+    if not os.path.isfile(os.path.join(dataset_root_folder, csv_filename)):
+        # get inverse of labelmap -> change key-value by value-key
+        value_key_labelmap = dict((v, k) for k, v in labelmap.items())
 
-    data = {
-        'filename': [],
-        'label': []
-    }
+        data = {
+            'filename': [],
+            'label': []
+        }
 
-    for dataset_version in datasets:
-        logging.info(f'Write labels on .csv for dataset version {dataset_version.version}')
-        result = Parallel(n_jobs=os.cpu_count())(
-            delayed(get_filename_and_label)(asset) for asset in tqdm(dataset_version.list_assets()))
+        for dataset_version in datasets:
+            logging.info(f'Write labels on .csv for dataset version {dataset_version.version}')
+            result = Parallel(n_jobs=os.cpu_count())(
+                delayed(get_filename_and_label)(asset) for asset in tqdm(dataset_version.list_assets()))
 
-        for filename, label in result:
-            data['filename'].append(filename)
-            data['label'].append(value_key_labelmap[label])
+            for filename, label in result:
+                data['filename'].append(filename)
+                data['label'].append(value_key_labelmap[label])
 
-    df = pd.DataFrame(data)
-    os.makedirs(dataset_root_folder, exist_ok=True)
-    df.to_csv(os.path.join(dataset_root_folder, csv_filename))
+        df = pd.DataFrame(data)
+        os.makedirs(dataset_root_folder, exist_ok=True)
+        df.to_csv(os.path.join(dataset_root_folder, csv_filename))
+
+    else:
+        logging.info('.csv file had already been downloaded')
 
 
 if __name__ == '__main__':
@@ -129,8 +134,8 @@ if __name__ == '__main__':
     torch.manual_seed(random_seed)
 
     # Define input/output folders
-    dataset_root_folder: str = os.path.join(os.path.dirname(os.getcwd()), 'dataset')
-    path_saved_models: str = os.path.join(os.path.dirname(os.getcwd()), 'saved_models')
+    dataset_root_folder: str = os.path.join(os.getcwd(), 'dataset')
+    path_saved_models: str = os.path.join(os.getcwd(), 'saved_models')
     os.makedirs(path_saved_models, exist_ok=True)
 
     # Picsell.ia connection
@@ -176,7 +181,7 @@ if __name__ == '__main__':
     labelmap = get_class_mapping_from_picsellia(dataset_versions=datasets)
 
     # Create label .csv file
-    create_label_file(datasets=datasets, labelmap=labelmap)
+    create_label_file(datasets=datasets, dataset_root_folder=dataset_root_folder, labelmap=labelmap)
 
     if not os.path.exists(os.path.join(dataset_root_folder, 'train')):
         # TODO create function to download dataset depending on constraints
@@ -235,7 +240,7 @@ if __name__ == '__main__':
         raise f'The model ResNet with {nb_layers} was not found. The training process will close.'
 
     # Modify the last layer of the model
-    num_classes = len(labelmap)
+    num_classes = 1 if len(labelmap) == 2 else len(labelmap)
     model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
 
     # Set the model to run on the device
@@ -285,7 +290,12 @@ if __name__ == '__main__':
 
                 # Forward pass
                 outputs = model(inputs)
-                loss = criterion(outputs, labels)
+
+                if len(labelmap) > 2:
+                    loss = criterion(outputs, labels)
+                else:
+                    loss = criterion(torch.squeeze(outputs), labels.float())
+
                 train_loss += loss.item()
 
                 # Backward pass
