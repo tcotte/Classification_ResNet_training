@@ -3,22 +3,29 @@ import os
 import typing
 
 import albumentations as A
+import pandas as pd
+import picsellia
 import torch
 import torchvision
 from albumentations import ToTensorV2
-from picsellia import Client
-from picsellia.types.enums import InferenceType
+from joblib import delayed, Parallel
+from picsellia import Client, Experiment, Asset, DatasetVersion
+from picsellia.exceptions import ResourceNotFoundError
+from picsellia.types.enums import InferenceType, ExperimentStatus
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from datasets import BinaryDataset
 from logger import PicselliaLogger
-from utils import download_datasets
+from utils import download_datasets, get_class_mapping_from_picsellia
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
 logging.getLogger().setLevel(logging.INFO)
 
 
-def fill_picsellia_evaluation_tab(model: torch.nn.Module, validation_loader: DataLoader, test_dataset) -> None:
+def fill_picsellia_evaluation_tab(model: torch.nn.Module, validation_loader: DataLoader,
+                                  test_dataset: picsellia.DatasetVersion, device: str,
+                                  experiment: Experiment) -> None:
     """
     Fill Picsellia evaluation which allows comparing on a dedicated bench of images the prediction done by the freshly
     trained model with the ground-truth.
@@ -40,30 +47,56 @@ def fill_picsellia_evaluation_tab(model: torch.nn.Module, validation_loader: Dat
             confidences = torch.max(output_logits, dim=1).values.cpu().numpy().tolist()
             predictions = torch.argmax(outputs, dim=1).cpu().numpy().tolist()
 
-            print(outputs)
+            for filename, pred, conf in zip(filenames, predictions, confidences):
+                try:
+                    asset = test_dataset.find_asset(filename=filename)
+                except ResourceNotFoundError:
+                    logging.error(f'Asset {asset.filename} not found in dataset version')
+                    continue
 
-            # outputs = model.generate(batch["pixel_values"].to(device))
-        # generated_text = processor.batch_decode(outputs, skip_special_tokens=True)
-
-        for filename, pred, conf in zip(filenames.numpy().tolist(), predictions, confidences):
-            asset = test_dataset.find_asset(filename=filename)
-            #
-            label = test_dataset.get_or_create_label(name=label_map[pred])
-            experiment.add_evaluation(asset, classifications=[(label, round(conf, 3))])
+                label = test_dataset.get_or_create_label(name=label_map[pred])
+                experiment.add_evaluation(asset, classifications=[(label, round(conf, 3))])
     #
     job = experiment.compute_evaluations_metrics(InferenceType.CLASSIFICATION)
     job.wait_for_done()
 
 
+def get_filename_and_label(asset: Asset) -> tuple[str, str]:
+    annotation = asset.list_annotations()[0]
+    return asset.filename, annotation.list_classifications()[0].label.name
+
+
+def create_label_file(datasets: list[DatasetVersion], labelmap: dict, csv_filename: str = 'labels.csv') -> None:
+    # get inverse of labelmap -> change key-value by value-key
+    value_key_labelmap = dict((v, k) for k, v in labelmap.items())
+
+    data = {
+        'filename': [],
+        'label': []
+    }
+
+    for dataset_version in datasets:
+        result = Parallel(n_jobs=os.cpu_count())(
+            delayed(get_filename_and_label)(asset) for asset in tqdm(dataset_version.list_assets()))
+
+        for filename, label in result:
+            data['filename'].append(filename)
+            data['label'].append(value_key_labelmap[label])
+
+    df = pd.DataFrame(data)
+    os.makedirs(dataset_root_folder, exist_ok=True)
+    df.to_csv(os.path.join(dataset_root_folder, csv_filename))
+
+
 if __name__ == '__main__':
-    image_size: typing.Final[tuple[int, int]] = (512, 512)
-    learning_rate: typing.Final[float] = 1e-4
-    num_epochs: typing.Final[int] = 10
-    batch_size: typing.Final[int] = 4
-    num_workers: typing.Final[int] = 8
+    # TODO
+    """
+    get labelmap
+    construct .csv file from labelmap
+    get context parameters
+    create a warmup
+    """
     random_seed: typing.Final[int] = 42
-    pretrained_model: typing.Final[bool] = True
-    nb_layers: typing.Final[int] = 18
 
     torch.manual_seed(random_seed)
 
@@ -80,6 +113,24 @@ if __name__ == '__main__':
     # Get experiment
     experiment = client.get_experiment_by_id(id=os.environ["experiment_id"])
 
+    # TODO get params
+    context = experiment.get_log(name='parameters').data
+    image_side = context.get('image_size', 512)
+    image_size: typing.Final[tuple[int, int]] = (image_side, image_side)
+    learning_rate: typing.Final[float] = context.get('learning_rate', 1e-4)
+    num_epochs: typing.Final[int] = context.get('num_epochs', 10)
+    batch_size: typing.Final[int] = context.get('batch_size', 8)
+    num_workers: typing.Final[int] = context.get('num_workers', os.cpu_count())
+    pretrained_model: typing.Final[bool] = bool(context.get('pretrained_model', 1))
+
+    if 'nb_layers' not in list(context.keys()):
+        logging.error('nb_layers not defined, the program will stop')
+        experiment.update(status=ExperimentStatus.FAILED)
+        raise SystemExit
+
+    else:
+        nb_layers: typing.Final[int] = context['nb_layers']
+
     logger = PicselliaLogger(client=client, experiment=experiment)
 
     # Get device
@@ -88,6 +139,13 @@ if __name__ == '__main__':
 
     # Download datasets
     datasets = experiment.list_attached_dataset_versions()
+
+    # get labelmap
+    labelmap = get_class_mapping_from_picsellia(dataset_versions=datasets)
+
+    # Create label .csv file
+    create_label_file(datasets=datasets, labelmap=labelmap)
+
 
     if not os.path.exists(dataset_root_folder):
         # TODO create function to download dataset depending on constraints
@@ -119,45 +177,28 @@ if __name__ == '__main__':
         ]
     )
 
-    """dataset = CT_Dataset(csv_path='data.csv', image_folder='data', transform=train_transform)
-    batch_size = 16
-    validation_split = .2
-    shuffle_dataset = True
-    random_seed = 42
 
-    # Creating data indices for training and validation splits:
-    dataset_size = len(dataset)
-    indices = list(range(dataset_size))
-    split = int(np.floor(validation_split * dataset_size))
-    if shuffle_dataset:
-        np.random.seed(random_seed)
-        np.random.shuffle(indices)
-    train_indices, val_indices = indices[split:], indices[:split]
-
-    # Creating PT data samplers and loaders:
-    train_sampler = SubsetRandomSampler(train_indices)
-    valid_sampler = SubsetRandomSampler(val_indices)
-
-    train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-                                               sampler=train_sampler)
-    validation_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-                                                    sampler=valid_sampler)"""
-
-    train_dataset = BinaryDataset(csv_path='./dataset/labels.csv', image_folder='dataset/train',
+    train_dataset = BinaryDataset(csv_path=os.path.join(dataset_root_folder, 'labels.csv'),
+                                  image_folder=os.path.join(dataset_root_folder, 'train'),
                                   transform=train_transform)
-    test_dataset = BinaryDataset(csv_path='./dataset/labels.csv', image_folder='dataset/test',
+    val_dataset = BinaryDataset(csv_path=os.path.join(dataset_root_folder, 'labels.csv'),
+                                image_folder=os.path.join(dataset_root_folder, 'val'),
+                                transform=validation_transform, is_test=False)
+
+    test_dataset = BinaryDataset(csv_path=os.path.join(dataset_root_folder, 'labels.csv'),
+                                 image_folder=os.path.join(dataset_root_folder,
+                                                           'test' if len(datasets) == 3 else 'val'),
                                  transform=validation_transform, is_test=True)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    validation_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=num_workers)
+    validation_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=num_workers)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     # load model
     if hasattr(torchvision.models, f'resnet{nb_layers}'):
         model = getattr(torchvision.models, f'resnet{nb_layers}')(pretrained=pretrained_model)
-
-
 
     else:
         logging.error(f'The model ResNet with {nb_layers} was not found. The training process will close.')
@@ -173,7 +214,7 @@ if __name__ == '__main__':
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    logger.on_train_begin()
+    logger.on_train_begin(class_mapping=labelmap)
 
     for epoch in range(num_epochs):
         train_loss = 0.0
@@ -184,7 +225,6 @@ if __name__ == '__main__':
             # Move input and label tensors to the device
             inputs = inputs.to(device)
             labels = labels.to(device)
-            # labels = [{k: v.to(device) for k, v in t.items()} for t in labels]
 
             # Zero out the optimizer
             optimizer.zero_grad()
@@ -197,8 +237,6 @@ if __name__ == '__main__':
             # Backward pass
             loss.backward()
             optimizer.step()
-
-        # logging.info(train_loss / len(train_loader))
 
         model.eval()
         total_correct = 0
@@ -228,5 +266,10 @@ if __name__ == '__main__':
     logger.store_model(model_path=last_model_path, model_name="last_weights")
     logging.info("Model weights were successfully saved.")
 
-    fill_picsellia_evaluation_tab(model=model, validation_loader=validation_loader,
-                                  test_dataset=experiment.get_dataset('val'))
+    evaluation_dataset = experiment.get_dataset('val') if len(datasets) == 2 else experiment.get_dataset('test')
+    fill_picsellia_evaluation_tab(model=model, validation_loader=test_loader,
+                                  test_dataset=evaluation_dataset,
+                                  device=device, experiment=experiment)
+
+    logging.info("Training was successfully completed.")
+    experiment.update(status=ExperimentStatus.SUCCESS)

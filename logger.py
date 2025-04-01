@@ -6,7 +6,7 @@ from typing import Dict
 
 import picsellia
 from picsellia import Client, Experiment, DatasetVersion, Annotation
-from picsellia.types.enums import LogType
+from picsellia.types.enums import LogType, ExperimentStatus
 
 from utils import get_GPU_occupancy
 from joblib import Parallel, delayed
@@ -22,6 +22,10 @@ class PicselliaLogger:
         self._client: Client = client
         self._experiment: Experiment = experiment
 
+    def log_labelmap(self, class_mapping: dict[int, str]):
+        self._experiment.log(name='LabelMap', type=LogType.TABLE,
+                             data={str(key): value for key, value in class_mapping.items()})
+
     def get_label_map(self, list_dataset_versions: list[DatasetVersion]) -> list:
         label_map: list = []
         for dataset_version in list_dataset_versions:
@@ -29,6 +33,10 @@ class PicselliaLogger:
 
         # remove dupli
         return list(set(label_map))
+
+    def on_end_training(self):
+        logging.info("Training was successfully completed.")
+        self._experiment.update(status=ExperimentStatus.SUCCESS)
 
     def get_picsellia_experiment_link(self) -> str:
         """
@@ -66,7 +74,7 @@ class PicselliaLogger:
 
         self._experiment.log(name=title, type=LogType.BAR, data=data)
 
-    def on_train_begin(self) -> None:
+    def on_train_begin(self, class_mapping: dict[int, str]) -> None:
         """
         Do some actions when training begins:
         - Write experiment link in telemetry.
@@ -75,6 +83,10 @@ class PicselliaLogger:
         """
         logging.info(f"Successfully logged to Picsellia\n You can follow experiment here: "
                      f"{self.get_picsellia_experiment_link()} ")
+
+        self.log_labelmap(class_mapping=class_mapping)
+
+        self._experiment.update(status=ExperimentStatus.RUNNING)
 
         self.plot_dataset_version_labels(dataset_version_names=['train', 'val'])
 

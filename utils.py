@@ -1,10 +1,21 @@
 import logging
 import os
+import typing
 
 import pandas as pd
 import torch
 from matplotlib import pyplot as plt
-from picsellia import Experiment
+from picsellia import Experiment, DatasetVersion
+
+
+def get_class_mapping_from_picsellia(dataset_versions: typing.List[DatasetVersion]) -> typing.Dict[int, str]:
+    labels = []
+    for ds_version in dataset_versions:
+        for label in ds_version.list_labels():
+            if label.name not in labels:
+                labels.append(label.name)
+
+    return dict(zip(range(len(labels)), labels))
 
 
 def download_datasets(experiment: Experiment, root_folder: str = 'dataset'):
@@ -38,7 +49,7 @@ def download_datasets(experiment: Experiment, root_folder: str = 'dataset'):
             logging.info(f'{alias} alias for {dataset_version}')
             download_dataset_version()
 
-    elif len(experiment.list_attached_dataset_versions()) == 3:
+    elif len(experiment.list_attached_dataset_versions()) == 2:
         for alias in ['train', 'val']:
             dataset_version = experiment.get_dataset(alias)
             logging.info(f'{alias} alias for {dataset_version}')
