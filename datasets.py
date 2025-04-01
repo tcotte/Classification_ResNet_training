@@ -9,7 +9,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 
-class CT_Dataset(Dataset):
+"""class CT_Dataset(Dataset):
     def __init__(self, csv_path: str, image_folder: str, transform=None):
         df = pd.read_csv(csv_path)
         self._image_folder = image_folder
@@ -28,10 +28,10 @@ class CT_Dataset(Dataset):
         return image, label
 
     def __len__(self):
-        return len(self._labels)
+        return len(self._labels)"""
 
 
-class BinaryDataset(Dataset):
+class ClassificationDataset(Dataset):
     def __init__(self, csv_path: str, image_folder: str, is_test: bool = False, transform=None):
         self._is_test = is_test
         self.df = pd.read_csv(csv_path)
@@ -60,5 +60,5 @@ class BinaryDataset(Dataset):
 
 
 if __name__ == '__main__':
-    train_dataset = BinaryDataset(csv_path='./dataset/labels.csv', image_folder='dataset/train')
+    train_dataset = ClassificationDataset(csv_path='./dataset/labels.csv', image_folder='dataset/train')
     print(train_dataset[0])

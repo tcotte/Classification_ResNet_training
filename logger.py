@@ -81,7 +81,7 @@ class PicselliaLogger:
         - Plot labels of training/validation dataset version.
         :return:
         """
-        logging.info(f"Successfully logged to Picsellia\n You can follow experiment here: "
+        logging.info(f"Successfully logged to Picsellia\n You can follow your experiment here: "
                      f"{self.get_picsellia_experiment_link()} ")
 
         self.log_labelmap(class_mapping=class_mapping)
@@ -90,24 +90,35 @@ class PicselliaLogger:
 
         self.plot_dataset_version_labels(dataset_version_names=['train', 'val'])
 
-    def on_epoch_end(self, epoch: int, train_loss: float, val_loss: float, val_accuracy: float,
-                     display_gpu_occupancy: bool) -> None:
+    def on_epoch_end(self, epoch: int, train_loss: float, val_loss: float, val_accuracy: float, val_recall: float,
+                     val_precision: float, display_gpu_occupancy: bool, current_lr: float) -> None:
         """
-        Log training loss and validation CER when the epoch finishes
+        Log training loss and validation accuracy when the epoch finishes
         :param epoch: epoch number which finished
         :param train_loss: previous training loss
-        :param val_cer: previous validation CER
+        :param val_accuracy: previous validation accuracy
         :param display_gpu_occupancy: boolean which indicates if the GPU occupancy is displayed on Picsellia
         """
+        train_loss = round(train_loss, 2)
+        val_loss = round(val_loss, 2)
+        val_accuracy = round(val_accuracy, 2)
+        val_precision = round(val_precision, 2)
+        val_recall = round(val_recall, 2)
+
         self._experiment.log(name='Training loss', type=LogType.LINE, data=train_loss)
         self._experiment.log(name='Validation loss', type=LogType.LINE, data=val_loss)
 
         logging.info(f"Epoch {epoch + 1}: Training loss {train_loss} / Validation loss: {val_loss} "
-                     f"/ Accuracy {val_accuracy}")
-        self._experiment.log(name='Validation CER', type=LogType.LINE, data=val_accuracy)
+                     f"/ Accuracy {val_accuracy} / Precision {val_precision} / Recall {val_recall}")
+
+        self._experiment.log(name='Accuracy', type=LogType.LINE, data=val_accuracy)
+        self._experiment.log(name='Precision', type=LogType.LINE, data=val_precision)
+        self._experiment.log(name='Recall', type=LogType.LINE, data=val_recall)
 
         if display_gpu_occupancy:
-            self._experiment.log(name='GPU occupancy (%)', type=LogType.LINE, data=get_GPU_occupancy())
+            self._experiment.log(name='GPU occupancy (%)', type=LogType.LINE, data=round(get_GPU_occupancy(), 2))
+
+        self._experiment.log(name='Learning rate', type=LogType.LINE, data=current_lr)
 
     def store_model(self, model_path: str, model_name: str) -> None:
         """

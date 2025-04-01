@@ -15,7 +15,11 @@ if __name__ == '__main__':
         "num_epochs": 10,
         "num_workers": 8,
         "pretrained_model": 1,
-        "nb_layers": 18
+        "nb_layers": 18,
+        'warmup_period': 2,
+        'warmup_last_step': 5,
+        'lr_scheduler_step_size': 10,
+        'lr_scheduler_gamma': 0.9
     }
 
     for nb_layers in [18, 50]:
