@@ -52,13 +52,18 @@ def fill_picsellia_evaluation_tab(model: torch.nn.Module, validation_loader: Dat
 
             if len(label_map) > 2:
                 output_logits = torch.nn.Softmax(dim=1)(outputs)
+                confidences = torch.max(output_logits, dim=1).values.cpu().numpy().tolist()
+                predictions = torch.argmax(outputs, dim=1)
+
             else:
                 output_logits = torch.nn.Sigmoid()(outputs)
+                predictions = torch.round(output_logits).int()
+                confidences = torch.tensor([i if i > 0.5 else 1-i for i in output_logits])
 
-            confidences = torch.max(output_logits, dim=1).values.cpu().numpy().tolist()
-            predictions = torch.argmax(outputs, dim=1).cpu().numpy().tolist()
 
             metric.update(predictions, labels)
+
+            predictions = predictions.cpu().numpy().tolist()
 
             for filename, pred, conf in zip(filenames, predictions, confidences):
                 try:
@@ -311,11 +316,16 @@ if __name__ == '__main__':
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 outputs = model(inputs)
-                loss = criterion(outputs, labels)
+
+                if len(labelmap) > 2:
+                    loss = criterion(outputs, labels)
+                    classifications = torch.argmax(outputs, dim=1)
+                else:
+                    outputs = torch.squeeze(outputs)
+                    loss = criterion(torch.squeeze(outputs), labels.float())
+                    classifications = torch.round(outputs).int()
 
                 validation_loss += loss.item()
-
-                classifications = torch.argmax(outputs, dim=1)
 
                 val_accuracy.update(classifications, labels)
                 val_precision.update(classifications, labels)
@@ -326,7 +336,7 @@ if __name__ == '__main__':
                             val_precision=float(val_precision.compute()),
                             val_recall=float(val_recall.compute()),
                             display_gpu_occupancy=True if torch.cuda.is_available() else False, epoch=epoch,
-                            current_lr=round(optimizer.param_groups[0]['lr'], 2))
+                            current_lr=round(optimizer.param_groups[0]['lr'], 6))
 
         # Reset metrics for the next epoch
         val_recall.reset()

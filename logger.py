@@ -116,7 +116,7 @@ class PicselliaLogger:
         self._experiment.log(name='Recall', type=LogType.LINE, data=val_recall)
 
         if display_gpu_occupancy:
-            self._experiment.log(name='GPU occupancy (%)', type=LogType.LINE, data=round(get_GPU_occupancy(), 2))
+            self._experiment.log(name='GPU occupancy (%)', type=LogType.LINE, data=int(get_GPU_occupancy()*100))
 
         self._experiment.log(name='Learning rate', type=LogType.LINE, data=current_lr)
 
