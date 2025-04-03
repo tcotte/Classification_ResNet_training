@@ -22,7 +22,11 @@ class PicselliaLogger:
         self._client: Client = client
         self._experiment: Experiment = experiment
 
-    def log_labelmap(self, class_mapping: dict[int, str]):
+    def log_labelmap(self, class_mapping: dict[int, str]) -> None:
+        """
+        Log labelmap as table into Picsell.ia experiment.
+        :param class_mapping: dictionary with class ids as keys and labels as values
+        """
         self._experiment.log(name='LabelMap', type=LogType.TABLE,
                              data={str(key): value for key, value in class_mapping.items()})
 
@@ -31,10 +35,14 @@ class PicselliaLogger:
         for dataset_version in list_dataset_versions:
             label_map.extend([label.name for label in dataset_version.list_labels()])
 
-        # remove dupli
+        # remove duplicates
         return list(set(label_map))
 
-    def on_end_training(self):
+    def on_end_training(self) -> None:
+        """
+        Called when training is finished. It logs a messages to indicate that the model was successfully trained and
+        change the experiment status to SUCCESS.
+        """
         logging.info("Training was successfully completed.")
         self._experiment.update(status=ExperimentStatus.SUCCESS)
 
@@ -160,20 +168,3 @@ class PicselliaLogger:
 
         except Exception as e:
             logging.warning(str(e))
-
-
-if __name__ == '__main__':
-    print(os.environ['api_token'])
-    client = Client(api_token=os.environ['api_token'], organization_id=os.environ["organization_id"])
-    experiment_id = '0195ada0-141a-793a-a176-b380b5bf2736'
-    experiment = client.get_experiment_by_id(experiment_id)
-    logger = PicselliaLogger(client=client, experiment=experiment)
-    # ds_versions = experiment.list_attached_dataset_versions()
-    # print(ds_versions)
-
-    for ds_alias in ['train', 'val']:
-        logger.dataset_label_distribution(dataset_version_name=ds_alias)
-
-    # training_dataset_version = experiment.get_dataset(name='train')
-
-    # training_dataset_version.list_labels()

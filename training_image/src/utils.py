@@ -1,14 +1,20 @@
 import logging
 import os
 import typing
-
-import pandas as pd
 import torch
-from matplotlib import pyplot as plt
 from picsellia import Experiment, DatasetVersion
 
 
 def get_class_mapping_from_picsellia(dataset_versions: typing.List[DatasetVersion]) -> typing.Dict[int, str]:
+    """
+    Get different labels names of different dataset versions sent into Picsell.ia's experiment.
+    :param dataset_versions: dataset versions sent into Picsell.ia's experiment.
+    :return: dictionary with number of label name as key and label name as value. For example:
+                {
+                    0: 'cat',
+                    1: 'dog'
+                }
+    """
     labels = []
     for ds_version in dataset_versions:
         for label in ds_version.list_labels():
@@ -20,7 +26,13 @@ def get_class_mapping_from_picsellia(dataset_versions: typing.List[DatasetVersio
 
 def download_datasets(experiment: Experiment, root_folder: str = 'dataset'):
     """
-    .
+    Download dataset versions from Picsell.ia experiment.
+    The folder names of each dataset version will be their alias.
+    Number of dataset versions can be:
+    - 3 if there are tagged as 'train', 'val', 'test'.
+    - 2 if there are tagged as 'train', 'val'.
+    If there are only two dataset version: file structure will be like this at the end of download:
+    root
     ├── train/
     │   ├── img1.jpg
     │   ├── img2.jpg
@@ -29,20 +41,23 @@ def download_datasets(experiment: Experiment, root_folder: str = 'dataset'):
         ├── img1.jpg
         ├── img2.jpg
         └── ...
+
+    :param experiment: Picsell.ia experiment
+    :param root_folder: path of the root folder of the dataset.
     """
-    def download_dataset_version():
+
+    def download_dataset_version() -> None:
+        """
+        Download image from dataset version in specified folder.
+        """
+        # create specific directory
         images_folder_path = os.path.join(root, alias)
-
         os.makedirs(images_folder_path)
-
+        # download dataset version's data in this specific directory
         assets = dataset_version.list_assets()
-
-        # create csv annotation
-
         assets.download(images_folder_path, max_workers=8)
 
     root = root_folder
-
     if len(experiment.list_attached_dataset_versions()) == 3:
         for alias in ['test', 'train', 'val']:
             dataset_version = experiment.get_dataset(alias)
@@ -54,7 +69,6 @@ def download_datasets(experiment: Experiment, root_folder: str = 'dataset'):
             dataset_version = experiment.get_dataset(alias)
             logging.info(f'{alias} alias for {dataset_version}')
             download_dataset_version()
-
 
 
 def get_GPU_occupancy(gpu_id: int = 0) -> float:
@@ -69,60 +83,5 @@ def get_GPU_occupancy(gpu_id: int = 0) -> float:
 
     else:
         return 0.0
-
-def get_label_distribution(csv_filepath: str, y_column_name: str = 'y') -> dict:
-    df = pd.read_csv(csv_filepath)
-    return df[y_column_name].value_counts().to_dict()
-
-
-def plot_label_distribution(csv_filepath: str, y_column_name: str):
-    label_distribution = get_label_distribution(csv_filepath, y_column_name)
-
-    fig, ax = plt.subplots()
-    fig.subplots_adjust(bottom=0.35)
-    cls_names = list(label_distribution.keys())
-    counts = list(label_distribution.values())
-
-    ax.bar(cls_names, counts)
-
-    ax.set_ylabel('Samples number')
-    ax.set_title('Dataset distribution')
-
-    plt.xticks(rotation=45, ha='right')
-
-    plt.show()
-
-
-
-
-
-if __name__ == '__main__':
-    # plot_label_distribution('data.csv', y_column_name='matrix')
-
-    labels = get_label_distribution('utils_ct/data.csv', y_column_name='matrix')
-
-    dict_part = {}
-    test_size = 0.15
-    for label, count in labels.items():
-        dict_part[label] = round(count * test_size)
-
-    print(dict_part)
-
-    df = pd.read_csv('utils_ct/data.csv')
-
-    train_X = []
-    train_Y = []
-    test_X = []
-    test_Y = []
-
-    for label, count in labels.items():
-        nb_test_elements = round(count * test_size)
-
-        train_X.extend(df[df.matrix == label][nb_test_elements:].filename)
-        train_X.extend(df[df.matrix == label][nb_test_elements:].matrix)
-        test_X.extend(df[df.matrix == label][:nb_test_elements].filename)
-        test_Y.extend(df[df.matrix == label][:nb_test_elements].matrix)
-
-
 
 

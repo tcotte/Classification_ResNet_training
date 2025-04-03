@@ -1,7 +1,5 @@
 import warnings
-
 warnings.simplefilter(action='ignore', category=FutureWarning)
-
 import os
 import numpy as np
 import pandas as pd
@@ -9,30 +7,16 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 
-"""class CT_Dataset(Dataset):
-    def __init__(self, csv_path: str, image_folder: str, transform=None):
-        df = pd.read_csv(csv_path)
-        self._image_folder = image_folder
-        self._labels = df.y.values()
-        self.image_filenames = df.X.values()
-        self.transform = transform
-
-    def __getitem__(self, index: int) -> tuple:
-        image = Image.open(os.path.join(self._image_folder, self.image_filenames[index])).convert('RGB')
-
-        label = self._labels[index]
-
-        if self.transform is not None:
-            image = self.transform(image=image)["image"]
-
-        return image, label
-
-    def __len__(self):
-        return len(self._labels)"""
-
-
 class ClassificationDataset(Dataset):
-    def __init__(self, csv_path: str, image_folder: str, is_test: bool = False, transform=None):
+    def __init__(self, csv_path: str, image_folder: str, is_test: bool = False, transform = None):
+        """
+        Classification dataset
+        :param csv_path: path of the .csv file which contains labels.
+        :param image_folder: dataset root image path
+        :param is_test: boolean indicating if the dataset is test or not. If it is a test one, *getitem* method will
+        return the filename of the picture.
+        :param transform: transformations to apply to each items.
+        """
         self._is_test = is_test
         self.df = pd.read_csv(csv_path)
         self._image_folder = image_folder
@@ -44,7 +28,6 @@ class ClassificationDataset(Dataset):
         image = Image.open(os.path.join(self._image_folder, filename)).convert('RGB')
 
         label = int(self.df[self.df['filename'] == filename].label)
-        # label = self._labels[index]
 
         if self.transform is not None:
             image = self.transform(image=np.array(image))["image"] / 255.
@@ -57,8 +40,3 @@ class ClassificationDataset(Dataset):
 
     def __len__(self):
         return len(os.listdir(self._image_folder))
-
-
-if __name__ == '__main__':
-    train_dataset = ClassificationDataset(csv_path='./dataset/labels.csv', image_folder='dataset/train')
-    print(train_dataset[0])

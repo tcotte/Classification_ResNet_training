@@ -58,8 +58,7 @@ def fill_picsellia_evaluation_tab(model: torch.nn.Module, validation_loader: Dat
             else:
                 output_logits = torch.nn.Sigmoid()(outputs)
                 predictions = torch.round(output_logits).int()
-                confidences = torch.tensor([i if i > 0.5 else 1-i for i in output_logits])
-
+                confidences = torch.tensor([i if i > 0.5 else 1 - i for i in output_logits])
 
             metric.update(predictions, labels)
 
@@ -74,8 +73,6 @@ def fill_picsellia_evaluation_tab(model: torch.nn.Module, validation_loader: Dat
 
                 label = test_dataset.get_or_create_label(name=label_map[pred])
                 experiment.add_evaluation(asset, classifications=[(label, round(conf, 3))])
-
-
 
     job = experiment.compute_evaluations_metrics(InferenceType.CLASSIFICATION)
     job.wait_for_done()
@@ -100,6 +97,15 @@ def get_filename_and_label(asset: Asset) -> tuple[str, str]:
 
 def create_label_file(datasets: list[DatasetVersion], labelmap: dict, dataset_root_folder: str,
                       csv_filename: str = 'labels.csv') -> None:
+    """
+    Create a .csv file which lists all the pictures and their associated labels in two different columns:
+    'label' and 'filename'.
+    :param datasets: datasets versions attached to the experiment
+    :param labelmap: dictionary which list as value all label names
+    :param dataset_root_folder: folder path of the dataset
+    :param csv_filename: filename of the .csv file that will be created to list all the pictures and their associated
+    labels.
+    """
     if not os.path.isfile(os.path.join(dataset_root_folder, csv_filename)):
         # get inverse of labelmap -> change key-value by value-key
         value_key_labelmap = dict((v, k) for k, v in labelmap.items())
@@ -127,20 +133,13 @@ def create_label_file(datasets: list[DatasetVersion], labelmap: dict, dataset_ro
 
 
 if __name__ == '__main__':
-    # TODO
-    """
-    get labelmap
-    construct .csv file from labelmap
-    get context parameters
-    create a warmup
-    """
     random_seed: typing.Final[int] = 42
 
     torch.manual_seed(random_seed)
 
     # Define input/output folders
-    dataset_root_folder: str = os.path.join(os.getcwd(), 'dataset')
-    path_saved_models: str = os.path.join(os.getcwd(), 'saved_models')
+    dataset_root_folder: str = os.path.join(os.path.dirname(os.getcwd()), 'dataset')
+    path_saved_models: str = os.path.join(os.path.dirname(os.getcwd()), 'saved_models')
     os.makedirs(path_saved_models, exist_ok=True)
 
     # Picsell.ia connection
@@ -165,13 +164,16 @@ if __name__ == '__main__':
     lr_scheduler_step_size = context.get('lr_scheduler_step_size', 10)
     lr_scheduler_gamma = context.get('lr_scheduler_gamma', 0.9)
 
-    if 'nb_layers' not in list(context.keys()):
+    if 'architecture' in list(os.environ.keys()):
+        nb_layers: typing.Final[int] = int(os.environ['architecture'])
+
+    elif 'nb_layers' in list(context.keys()):
+        nb_layers: typing.Final[int] = context['nb_layers']
+
+    else:
         logging.error('nb_layers not defined, the program will stop')
         experiment.update(status=ExperimentStatus.FAILED)
         raise SystemExit
-
-    else:
-        nb_layers: typing.Final[int] = context['nb_layers']
 
     logger = PicselliaLogger(client=client, experiment=experiment)
 
@@ -358,5 +360,4 @@ if __name__ == '__main__':
                                   test_dataset=evaluation_dataset,
                                   device=device, experiment=experiment, labelmap=labelmap)
 
-    logging.info("Training was successfully completed.")
-    experiment.update(status=ExperimentStatus.SUCCESS)
+    logger.on_end_training()
