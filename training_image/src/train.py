@@ -59,8 +59,12 @@ def fill_picsellia_evaluation_tab(model: torch.nn.Module, validation_loader: Dat
                 output_logits = torch.nn.Sigmoid()(outputs)
                 predictions = torch.round(output_logits).int()
                 confidences = torch.tensor([i if i > 0.5 else 1 - i for i in output_logits])
+                confidences = confidences.cpu().numpy().tolist()
 
-            metric.update(predictions, labels)
+            if not len(label_map) > 2:
+                metric.update(torch.squeeze(predictions), labels)
+            else:
+                metric.update(predictions, labels)
 
             predictions = predictions.cpu().numpy().tolist()
 
@@ -71,7 +75,14 @@ def fill_picsellia_evaluation_tab(model: torch.nn.Module, validation_loader: Dat
                     logging.error(f'Asset {asset.filename} not found in dataset version')
                     continue
 
-                label = test_dataset.get_or_create_label(name=label_map[pred])
+                if isinstance(pred, int):
+                    label = test_dataset.get_or_create_label(name=label_map[pred])
+                elif isinstance(pred, list):
+                    label = test_dataset.get_or_create_label(name=label_map[pred[0]])
+                else:
+                    logging.error(f'The format {type(pred)} for predictions is not supported.')
+                    continue
+
                 experiment.add_evaluation(asset, classifications=[(label, round(conf, 3))])
 
     job = experiment.compute_evaluations_metrics(InferenceType.CLASSIFICATION)
@@ -138,8 +149,10 @@ if __name__ == '__main__':
     torch.manual_seed(random_seed)
 
     # Define input/output folders
-    dataset_root_folder: str = os.path.join(os.path.dirname(os.getcwd()), 'dataset')
-    path_saved_models: str = os.path.join(os.path.dirname(os.getcwd()), 'saved_models')
+    #dataset_root_folder: str = os.path.join(os.path.dirname(os.getcwd()), 'dataset')
+    dataset_root_folder: str = os.path.join(os.getcwd(), 'dataset')
+    #path_saved_models: str = os.path.join(os.path.dirname(os.getcwd()), 'saved_models')
+    path_saved_models: str = os.path.join(os.getcwd(), 'saved_models')
     os.makedirs(path_saved_models, exist_ok=True)
 
     # Picsell.ia connection
@@ -163,6 +176,8 @@ if __name__ == '__main__':
     warmup_last_step = context.get('warmup_last_step', 5)
     lr_scheduler_step_size = context.get('lr_scheduler_step_size', 10)
     lr_scheduler_gamma = context.get('lr_scheduler_gamma', 0.9)
+    optimizer = context.get('optimizer', 'Adam')
+    weight_decay: typing.Final[float] = context.get('weight_decay', 0)
 
     if 'architecture' in list(os.environ.keys()):
         nb_layers: typing.Final[int] = int(os.environ['architecture'])
@@ -258,7 +273,14 @@ if __name__ == '__main__':
     else:
         criterion = torch.nn.BCEWithLogitsLoss()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    if optimizer.lower() == 'adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    elif optimizer.lower() == 'adamw':
+        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    else:
+        logging.error(f'The optimizer {optimizer} is not supported in this training. Adam will be used to pursue the'
+                      f'training.')
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     warmup_scheduler = ExponentialWarmup(optimizer,
                                          warmup_period=warmup_period,

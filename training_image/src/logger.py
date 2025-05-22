@@ -27,7 +27,7 @@ class PicselliaLogger:
         Log labelmap as table into Picsell.ia experiment.
         :param class_mapping: dictionary with class ids as keys and labels as values
         """
-        self._experiment.log(name='LabelMap', type=LogType.TABLE,
+        self._experiment.log(name='LabelMap', type=LogType.LABELMAP,
                              data={str(key): value for key, value in class_mapping.items()})
 
     def get_label_map(self, list_dataset_versions: list[DatasetVersion]) -> list:

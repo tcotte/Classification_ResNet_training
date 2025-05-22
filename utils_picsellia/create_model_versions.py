@@ -22,7 +22,10 @@ if __name__ == '__main__':
         'warmup_period': 2,
         'warmup_last_step': 5,
         'lr_scheduler_step_size': 10,
-        'lr_scheduler_gamma': 0.9
+        'lr_scheduler_gamma': 0.9,
+        'image_size': 640,
+        'optimizer': 'Adam',
+        'weight_decay': 0.0
     }
 
     for nb_layers in [18, 34, 50, 101, 152]:

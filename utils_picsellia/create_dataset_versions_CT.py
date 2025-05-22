@@ -31,8 +31,10 @@ if __name__ == '__main__':
 
     # get dataset versions ids which are important -> first is challenge_test and second one is challenge_test_v2
     dataset_version_ids = {
-        'challenge_test': '01954714-a30b-7c87-a774-a9e9d3adb80d',
-        'challenge_test_v2': '0195d697-46a8-73ed-9cf1-62102f1d0996'
+        # 'challenge_test': '01954714-a30b-7c87-a774-a9e9d3adb80d',
+        # 'challenge_test_v2': '0195d697-46a8-73ed-9cf1-62102f1d0996',
+        'challenge_test_v3': '0196b40e-bb9d-7047-aaa7-fa2f39c64db9'
+
     }
 
     for set_name, dataset_version_id in dataset_version_ids.items():
